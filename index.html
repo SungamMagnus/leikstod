@@ -58,7 +58,7 @@
   #stage { flex: 1; display: flex; align-items: center; justify-content: center; position: relative; min-height: 0; background: var(--stage); }
   #stage canvas { image-rendering: pixelated; cursor: grab; display: block; }
   #stage.drag { outline: 1px solid var(--coral); outline-offset: -6px; }
-  #srcName { position: absolute; top: 8px; left: 10px; font-size: var(--t-cap); letter-spacing: .06em; text-transform: uppercase; color: var(--ink62); z-index: 1; pointer-events: none; }
+  #srcName { margin-left: 6px; font-size: var(--t-sm); letter-spacing: .04em; color: var(--coral); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 32ch; }
   #hint { position: absolute; color: var(--ink38); text-align: center; pointer-events: none; font-size: var(--t-sm); letter-spacing: .04em; text-transform: uppercase; line-height: 2; }
   aside { width: 400px; overflow-y: auto; display: flex; flex-direction: column; gap: 18px; padding-top: 2px; }
 
@@ -122,6 +122,7 @@
   <div class="wordmark">Leikstöð</div>
   <label class="latch" tabindex="0">Open video<input id="file" type="file" accept="video/*" hidden></label>
   <button class="latch" id="cam">Webcam</button>
+  <span id="srcName"></span>
   <div class="spacer"></div>
   <select class="drop" id="fps" title="Export frame rate"><option value="15">15 fps</option><option value="24">24 fps</option><option value="30" selected>30 fps</option></select>
   <select class="drop" id="scale" title="Low: 640×360&#10;Medium: 1280×720&#10;High: 1920×1080&#10;(for 16:9 video; updates when a video is loaded)"><option value="2">Low</option><option value="4" selected>Medium</option><option value="1080">High</option></select>
@@ -133,7 +134,6 @@
   <fieldset class="panel" id="view">
     <legend>Video</legend>
     <div id="stage">
-      <div id="srcName"></div>
       <div id="hint">Drop a video here, or open one above<br>Drag to orbit · double-click to reset camera</div>
     </div>
   </fieldset>
@@ -903,7 +903,8 @@ function onSourceLoaded() {
   aspect = video.videoWidth / video.videoHeight;
   camera.aspect = aspect;
   $('hint').hidden = true;
-  $('srcName').textContent = isWebcam ? 'Webcam' : (srcName || '');
+  $('srcName').textContent = isWebcam ? 'Webcam (live)' : (srcName || '');
+  $('srcName').title = $('srcName').textContent;
   resetPlate();
   inT = outT = null;
   rebuildGrid();
