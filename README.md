@@ -1,3 +1,5 @@
+<img src="icon.svg" width="96" height="96" alt="Leikstöð logo: a pixel-art L and S overlapping">
+
 # Leikstöð
 
 Turns a video into a PlayStation 1–style scene: everything becomes a chunky, low-poly 3D model with wobbly vertices, warped textures, fog and dithered 15-bit color.

@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 32 32" width="512" height="512" shape-rendering="crispEdges">
+  <!-- Leikstöð: blocky L and S on a 32px grid, extruded with dithered side faces like a PS1-era title. -->
+  <defs>
+    <!-- 2x2 ordered dither for the extruded sides -->
+    <pattern id="coralSide" width="2" height="2" patternUnits="userSpaceOnUse">
+      <rect width="2" height="2" fill="#8a4630"/>
+      <rect width="1" height="1" fill="#b25d3f"/>
+      <rect x="1" y="1" width="1" height="1" fill="#b25d3f"/>
+    </pattern>
+    <pattern id="tealSide" width="2" height="2" patternUnits="userSpaceOnUse">
+      <rect width="2" height="2" fill="#26605a"/>
+      <rect width="1" height="1" fill="#357f76"/>
+      <rect x="1" y="1" width="1" height="1" fill="#357f76"/>
+    </pattern>
+    <g id="L">
+      <rect x="5" y="3" width="5" height="21"/>
+      <rect x="5" y="19" width="12" height="5"/>
+    </g>
+    <g id="S">
+      <rect x="14" y="8" width="12" height="4"/>
+      <rect x="12" y="10" width="4" height="8"/>
+      <rect x="14" y="16" width="10" height="4"/>
+      <rect x="22" y="18" width="4" height="8"/>
+      <rect x="12" y="24" width="12" height="4"/>
+    </g>
+  </defs>
+
+  <rect width="32" height="32" fill="#2e2d2b"/>
+  <!-- steel floor line with a dithered fade, the stage the letters stand on -->
+  <rect x="2" y="29" width="28" height="1" fill="#6695c2"/>
+  <rect x="3" y="30" width="1" height="1" fill="#6695c2"/><rect x="5" y="30" width="1" height="1" fill="#6695c2"/><rect x="7" y="30" width="1" height="1" fill="#6695c2"/><rect x="9" y="30" width="1" height="1" fill="#6695c2"/><rect x="11" y="30" width="1" height="1" fill="#6695c2"/><rect x="13" y="30" width="1" height="1" fill="#6695c2"/><rect x="15" y="30" width="1" height="1" fill="#6695c2"/><rect x="17" y="30" width="1" height="1" fill="#6695c2"/><rect x="19" y="30" width="1" height="1" fill="#6695c2"/><rect x="21" y="30" width="1" height="1" fill="#6695c2"/><rect x="23" y="30" width="1" height="1" fill="#6695c2"/><rect x="25" y="30" width="1" height="1" fill="#6695c2"/><rect x="27" y="30" width="1" height="1" fill="#6695c2"/><rect x="29" y="30" width="1" height="1" fill="#6695c2"/>
+
+  <!-- L: coral, extruded down-right -->
+  <use xlink:href="#L" href="#L" x="2" y="2" fill="url(#coralSide)"/>
+  <use xlink:href="#L" href="#L" x="1" y="1" fill="url(#coralSide)"/>
+  <use xlink:href="#L" href="#L" fill="#ed8159"/>
+  <rect x="5" y="3" width="5" height="1" fill="#f7b79c"/>
+  <rect x="5" y="3" width="1" height="21" fill="#f7b79c"/>
+  <rect x="10" y="19" width="7" height="1" fill="#f7b79c"/>
+
+  <!-- S: teal, overlapping the L's foot and casting its extrusion over it -->
+  <use xlink:href="#S" href="#S" x="2" y="2" fill="url(#tealSide)"/>
+  <use xlink:href="#S" href="#S" x="1" y="1" fill="url(#tealSide)"/>
+  <use xlink:href="#S" href="#S" fill="#52b0a4"/>
+  <rect x="14" y="8" width="12" height="1" fill="#93dbd1"/>
+  <rect x="12" y="10" width="1" height="8" fill="#93dbd1"/>
+  <rect x="16" y="16" width="8" height="1" fill="#93dbd1"/>
+  <rect x="12" y="24" width="10" height="1" fill="#93dbd1"/>
+
+  <!-- amber pixel: the live-state lamp -->
+  <rect x="26" y="3" width="2" height="2" fill="#d9a329"/>
+</svg>
