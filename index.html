@@ -614,8 +614,16 @@ let depthPipe = null, depthDevice = '';
 let lastDepth = null;   // { data, w, h }
 let firstDepth = true;
 
-async function estimateDepth() {
-  const img = RawImage.fromCanvas(capCanvas);
+// ONNX Runtime's WebGPU backend can't run two inferences on one session at once (it throws
+// "Session already started" / "Session mismatch" and can wedge), so every run is queued.
+let depthQueue = Promise.resolve();
+function estimateDepth() {
+  const img = RawImage.fromCanvas(capCanvas);   // read the frame now, not when the queue gets to it
+  const job = depthQueue.then(() => runDepth(img));
+  depthQueue = job.catch(() => {});
+  return job;
+}
+async function runDepth(img) {
   const out = await depthPipe(img);
   const t = out.predicted_depth;
   const dims = t.dims;
@@ -1054,11 +1062,19 @@ async function depthLoop() {
       const t = video.currentTime;
       const dt = lastDepthT == null || t <= lastDepthT ? 1 / 30 : t - lastDepthT;
       lastDepthT = t;
-      captureFrame();
-      // While paused (scrubbing), skip temporal smoothing so the previous position doesn't ghost in.
-      const paused = video.paused;
-      try { applyDepth(await estimateDepth(), paused, dt); } catch (e) { console.error(e); }
-      uploadColor();
+      previewBusy = true;
+      try {
+        captureFrame();
+        // While paused (scrubbing), skip temporal smoothing so the previous position doesn't ghost in.
+        const paused = video.paused;
+        const depth = await estimateDepth();
+        // Export may have started while this ran; its frames own the shared state now.
+        if (!exporting) { applyDepth(depth, paused, dt); uploadColor(); }
+      } catch (e) {
+        console.error(e);
+      } finally {
+        previewBusy = false;
+      }
       fpsCount++;
       const now = performance.now();
       if (now - fpsT > 1000) { setStatus(`Preview · depth ${(fpsCount * 1000 / (now - fpsT)).toFixed(1)} fps`); fpsCount = 0; fpsT = now; }
@@ -1067,7 +1083,7 @@ async function depthLoop() {
     }
   }
 }
-let lastDepthT = null;
+let lastDepthT = null, previewBusy = false;
 depthLoop();
 showLayerRows();
 
@@ -1109,6 +1125,8 @@ $('export').onclick = async () => {
   $('dl').hidden = true;
   const wasPlaying = !video.paused;
   video.pause();
+  // Let an in-flight preview frame finish before export starts using the model and shared canvases.
+  while (previewBusy) await new Promise(r => setTimeout(r, 10));
   try {
     const fps = +$('fps').value, scaleOpt = $('scale').value;
     const src = renderer.domElement;
