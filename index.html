@@ -1,0 +1,1186 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Leikstöð</title>
+<style>
+  /* Sungam graphite: flat paper, one monospace face, hairline borders at ink opacity,
+     square corners, no shadows. Colour is signal:
+       coral  the source video      teal   mesh / depth
+       lilac  layers                steel  look + output
+       violet camera                amber  live state (playing, exporting) */
+  :root {
+    --paper: #2e2d2b; --ink: #ece8df; --stage: #201f1e;
+    --ink04: rgba(236, 232, 223, .04); --ink13: rgba(236, 232, 223, .13); --ink18: rgba(236, 232, 223, .18);
+    --ink22: rgba(236, 232, 223, .22); --ink28: rgba(236, 232, 223, .28); --ink38: rgba(236, 232, 223, .38);
+    --ink45: rgba(236, 232, 223, .45); --ink55: rgba(236, 232, 223, .55); --ink62: rgba(236, 232, 223, .62);
+    --coral: #ed8159; --teal: #52b0a4; --steel: #6695c2; --violet: #8c7de0; --amber: #d9a329; --lilac: #d3a7dc;
+    --mono: "SF Mono", ui-monospace, Menlo, Consolas, monospace;
+    --t-cap: 9.4px; --t-sm: 10.6px; --t-base: 11.9px; --t-md: 13.1px; --t-xl: 20px;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font: var(--t-base)/1.35 var(--mono);
+         height: 100vh; display: flex; flex-direction: column; -webkit-font-smoothing: antialiased; }
+  button, select, input { font: inherit; color: inherit; }
+
+  /* header */
+  header { display: flex; gap: 10px; align-items: center; padding: 14px 24px; border-bottom: 1px solid var(--ink13); flex-wrap: wrap; }
+  .wordmark { font-size: var(--t-xl); font-weight: 700; letter-spacing: .28em; text-transform: uppercase; margin: 0 24px 0 0; white-space: nowrap; }
+  .spacer { flex: 1; }
+  .cap { font-size: var(--t-cap); letter-spacing: .06em; text-transform: uppercase; color: var(--ink62); }
+
+  /* latch: outlined button, lit = filled with its colour */
+  .latch { --c: var(--ink); background: var(--paper); border: 1.2px solid var(--ink28); color: var(--ink62);
+           height: 28px; padding: 0 16px; font-size: var(--t-sm); letter-spacing: .04em; text-transform: uppercase;
+           cursor: pointer; border-radius: 0; white-space: nowrap; display: inline-flex; align-items: center; justify-content: center; }
+  .latch:hover:not(:disabled) { border-color: var(--ink45); color: var(--ink); }
+  .latch.lit, .latch.primary:not(:disabled) { background: var(--c); border-color: var(--c); color: var(--paper); }
+  .latch:active:not(:disabled) { filter: brightness(.8); }
+  .latch:disabled { border-color: var(--ink13); color: var(--ink28); cursor: default; }
+  .latch:focus-visible, .num .box:focus-visible, .seg button:focus-visible, .drop:focus-visible { outline: 1px solid var(--ink62); outline-offset: 1px; }
+
+  /* dropdown: filled colour block, paper text */
+  .dropwrap { display: flex; flex-direction: column; gap: 4px; }
+  .drop { --c: var(--steel); appearance: none; -webkit-appearance: none; background: var(--c); color: var(--paper); border: 0; border-radius: 0;
+          height: 28px; padding: 0 28px 0 12px; font-size: var(--t-sm); letter-spacing: .04em; text-transform: uppercase; cursor: pointer;
+          background-image: linear-gradient(45deg, transparent 50%, var(--paper) 50%), linear-gradient(135deg, var(--paper) 50%, transparent 50%);
+          background-position: right 14px center, right 10px center; background-size: 4px 4px; background-repeat: no-repeat; }
+  .drop option { background: var(--paper); color: var(--ink); }
+  #dl { color: var(--steel); font-size: var(--t-sm); text-transform: uppercase; letter-spacing: .04em; }
+
+  /* panels: hairline frame in the panel colour, title cut into the top rule */
+  fieldset.panel { --c: var(--ink); border: 1px solid var(--c); margin: 0; padding: 14px 16px 16px; min-width: 0; }
+  fieldset.panel > legend { color: var(--c); font-size: var(--t-sm); letter-spacing: .04em; text-transform: uppercase; padding: 0 8px; margin-left: 6px; }
+  main { flex: 1; display: flex; gap: 24px; padding: 20px 24px 12px; min-height: 0; }
+  #view { flex: 1; display: flex; flex-direction: column; min-width: 0; --c: var(--coral); }
+  #stage { flex: 1; display: flex; align-items: center; justify-content: center; position: relative; min-height: 0; background: var(--stage); }
+  #stage canvas { image-rendering: pixelated; cursor: grab; display: block; }
+  #stage.drag { outline: 1px solid var(--coral); outline-offset: -6px; }
+  #srcName { position: absolute; top: 8px; left: 10px; font-size: var(--t-cap); letter-spacing: .06em; text-transform: uppercase; color: var(--ink62); z-index: 1; pointer-events: none; }
+  #hint { position: absolute; color: var(--ink38); text-align: center; pointer-events: none; font-size: var(--t-sm); letter-spacing: .04em; text-transform: uppercase; line-height: 2; }
+  aside { width: 400px; overflow-y: auto; display: flex; flex-direction: column; gap: 18px; padding-top: 2px; }
+
+  /* value box (Search style): caption above, a box whose fill shows the value */
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 18px; }
+  .num { --c: var(--teal); display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+  .num .cap { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .num .box { position: relative; height: 30px; background: var(--ink04); border: 1px solid var(--ink22); cursor: ns-resize;
+              user-select: none; touch-action: none; overflow: hidden; }
+  .num .box:hover { border-color: var(--ink38); }
+  .num .fill { position: absolute; inset: 0 auto 0 0; background: var(--c); opacity: .22; pointer-events: none; }
+  .num .val { position: absolute; left: 8px; top: 50%; transform: translateY(-50%); color: var(--c); font-weight: 700; font-size: var(--t-md); font-variant-numeric: tabular-nums; pointer-events: none; }
+  .num.editing .box { border-color: var(--c); cursor: text; }
+  .num input { position: absolute; inset: 2px; width: calc(100% - 4px); background: var(--paper); color: var(--ink); border: 0; outline: 0;
+               padding: 0 6px; font-weight: 700; font-size: var(--t-md); }
+  .wide { grid-column: 1 / -1; }
+
+  /* segmented selector (BASIC / REVERSED style) */
+  .seg { display: flex; border: 1px solid var(--ink28); --c: var(--lilac); }
+  .seg button { flex: 1; height: 30px; background: transparent; border: 0; border-left: 1px solid var(--ink18); color: var(--ink62);
+                font-size: var(--t-sm); letter-spacing: .04em; text-transform: uppercase; cursor: pointer; border-radius: 0; }
+  .seg button:first-child { border-left: 0; }
+  .seg button.on { background: var(--c); color: var(--paper); }
+  .seg button:not(.on):hover { color: var(--ink); }
+
+  /* timeline: fader-style seek */
+  #timeline { display: flex; gap: 10px; align-items: center; padding: 6px 24px 14px; }
+  #seekWrap { flex: 1; position: relative; height: 28px; display: flex; align-items: center; margin: 0 8px; }
+  #seek { -webkit-appearance: none; appearance: none; width: 100%; height: 28px; background: transparent; margin: 0; position: relative; z-index: 1; cursor: pointer; }
+  #seek::-webkit-slider-runnable-track { height: 8px; border-radius: 4px; background: linear-gradient(to right, rgba(237,129,89,.55) var(--p, 0%), var(--ink13) var(--p, 0%)); }
+  #seek::-moz-range-track { height: 8px; border-radius: 4px; background: var(--ink13); }
+  #seek::-moz-range-progress { height: 8px; border-radius: 4px; background: rgba(237,129,89,.55); }
+  #seek::-webkit-slider-thumb { -webkit-appearance: none; width: 18px; height: 22px; margin-top: -7px; background: var(--paper); border: 1.2px solid var(--coral); border-radius: 3px; }
+  #seek::-moz-range-thumb { width: 16px; height: 20px; background: var(--paper); border: 1.2px solid var(--coral); border-radius: 3px; }
+  #seek:disabled { opacity: .4; cursor: default; }
+  #range { position: absolute; top: 50%; height: 18px; transform: translateY(-50%); z-index: 2; background: rgba(237, 129, 89, .16);
+           border-left: 2px solid var(--coral); border-right: 2px solid var(--coral); pointer-events: none; }
+  #ioTime { color: var(--coral); font-variant-numeric: tabular-nums; font-size: var(--t-sm); white-space: nowrap; }
+  #time { color: var(--ink55); min-width: 120px; text-align: right; font-variant-numeric: tabular-nums; font-size: var(--t-sm); white-space: nowrap; }
+
+  /* status bar */
+  footer { display: flex; align-items: center; gap: 12px; padding: 8px 24px; border-top: 1px solid var(--ink13); font-size: var(--t-sm); color: var(--ink62); }
+  .lamp { width: 10px; height: 10px; border: 1px solid rgba(217, 163, 41, .45); flex: none; }
+  .lamp.on { background: var(--amber); border-color: var(--amber); }
+  #info { margin-left: auto; color: var(--ink45); }
+  #progress { height: 2px; background: var(--amber); width: 0; transition: width .1s; }
+  #srcVideo { display: none; }
+
+  @media (max-width: 900px) {
+    main { flex-direction: column; overflow-y: auto; }
+    #view { min-height: 50vh; }
+    aside { width: auto; overflow: visible; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <div class="wordmark">Leikstöð</div>
+  <label class="latch" tabindex="0">Open video<input id="file" type="file" accept="video/*" hidden></label>
+  <button class="latch" id="cam">Webcam</button>
+  <button class="latch" id="play" style="--c: var(--amber)" disabled>Play</button>
+  <div class="spacer"></div>
+  <select class="drop" id="fps" title="Export frame rate"><option value="15">15 fps</option><option value="24">24 fps</option><option value="30" selected>30 fps</option></select>
+  <select class="drop" id="scale" title="Low: 640×360&#10;Medium: 1280×720&#10;High: 1920×1080&#10;(for 16:9 video; updates when a video is loaded)"><option value="2">Low</option><option value="4" selected>Medium</option><option value="1080">High</option></select>
+  <button class="latch primary" id="export" style="--c: var(--steel)" disabled>Export MP4</button>
+  <a id="dl" hidden>Download</a>
+</header>
+<div id="progress"></div>
+<main>
+  <fieldset class="panel" id="view">
+    <legend>Video</legend>
+    <div id="stage">
+      <div id="srcName"></div>
+      <div id="hint">Drop a video here, or open one above<br>Drag to orbit · double-click to reset camera</div>
+    </div>
+  </fieldset>
+  <aside id="panel"></aside>
+</main>
+<div id="timeline">
+  <button class="latch" id="setIn" style="--c: var(--coral)" title="Set in point at the current time (I)" disabled>In</button>
+  <button class="latch" id="setOut" style="--c: var(--coral)" title="Set out point at the current time (O)" disabled>Out</button>
+  <button class="latch" id="clearIO" title="Clear in/out points (X)" disabled>Clear</button>
+  <div id="seekWrap"><div id="range" hidden></div><input id="seek" type="range" min="0" max="1" step="0.001" value="0" disabled></div>
+  <span id="ioTime"></span>
+  <span id="time">0:00.0 / 0:00.0</span>
+</div>
+<footer>
+  <div class="lamp" id="lamp"></div>
+  <span id="status">Loading depth model…</span>
+  <span id="info"></span>
+</footer>
+<video id="srcVideo" muted playsinline loop crossorigin="anonymous"></video>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+  "@huggingface/transformers": "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.5.1",
+  "mp4-muxer": "https://cdn.jsdelivr.net/npm/mp4-muxer@5.1.3/+esm"
+} }
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { pipeline, RawImage } from '@huggingface/transformers';
+import { Muxer, ArrayBufferTarget } from 'mp4-muxer';
+
+const $ = (id) => document.getElementById(id);
+const video = $('srcVideo');
+const statusEl = $('status');
+const setStatus = (s) => statusEl.textContent = s;
+
+// ---------- settings ----------
+const S = {
+  renderW: 640,      // internal render width (height follows aspect)
+  texW: 512,         // texture resolution width
+  gridCols: 160,     // mesh density
+  depthRange: 20,    // far / near ratio-ish
+  fov: 20,
+  temporal: 0.6,     // depth EMA
+  tear: 0,           // edge tear threshold (0 = never tear)
+  snap: 2,           // vertex snap grid in pixels
+  affine: 1,
+  shade: 0.6,
+  fog: 1,
+  fogStart: 0,
+  dither: 1,
+  levels: 31,        // 5 bits per channel
+  sway: 0,           // degrees
+  swaySpeed: 0.2,
+  fill: 0.9,         // extra mesh around the frame, as a fraction of its size per side
+  flat: 1,           // 0 = video texture, 1 = one averaged color per triangle
+  patch: 1,          // grid cells per color patch
+  layered: 1,        // 0 = single sheet, 1 = subject + filled background layer
+  split: 0.1,        // relative depth jump that separates subject from background
+  reach: 0.08,       // how far the background is rebuilt behind subject edges (fraction of width)
+  round: 0.5,        // how much subject edges curve back
+  memory: 0.9,       // how long previously seen background is remembered
+};
+const relayer = () => { if (gridDepth) { buildLayers(); uploadColor(); } };
+const controls = [
+  ['Mesh'],
+  ['gridCols', 'Grid columns', 8, 320, 1, rebuildGrid],
+  ['depthRange', 'Depth strength', 1, 60, 0.5],
+  ['temporal', 'Depth smoothing (playback)', 0, 0.95, 0.05],
+  ['tear', 'Edge tear (0 = off)', 0, 0.6, 0.01],
+  ['fov', 'Field of view', 20, 90, 1],
+  ['Layers'],
+  { select: 'layered', label: 'Mode', options: [[0, 'Single sheet'], [1, 'Layered fill']], onChange: () => { relayer(); showLayerRows(); } },
+  ['split', 'Edge split', 0.02, 0.5, 0.01, relayer],
+  ['reach', 'Fill reach', 0.02, 0.3, 0.01, relayer],
+  ['round', 'Edge rounding', 0, 1, 0.05, relayer],
+  ['memory', 'Background memory', 0, 1, 0.05],
+  ['Look'],
+  ['renderW', 'Render width', 160, 1280, 16, resizeRender],
+  ['flat', 'Flat color', 0, 1, 0.05],
+  ['patch', 'Color patch size', 1, 8, 1, () => { uploadColor(); }],
+  ['texW', 'Texture width', 32, 1024, 8, () => { uploadColor(); }],
+  ['snap', 'Vertex snap (px)', 0, 8, 0.25],
+  ['shade', 'Flat shading', 0, 1, 0.05],
+  ['fog', 'Fog', 0, 1, 0.05],
+  ['fogStart', 'Fog start', 0, 1, 0.05],
+  ['dither', 'Dither', 0, 2, 0.05],
+  ['levels', 'Color levels / channel', 3, 63, 1],
+  ['Camera'],
+  ['sway', 'Orbit sway (deg)', 0, 30, 0.5],
+  ['swaySpeed', 'Sway speed', 0, 3, 0.05],
+  ['fill', 'Background fill (0 = off)', 0, 1, 0.05, () => mesh && rebuildMesh()],
+];
+const panel = $('panel');
+const rows = {};
+const panelColor = { Mesh: 'var(--teal)', Layers: 'var(--lilac)', Look: 'var(--steel)', Camera: 'var(--violet)' };
+const decimalsOf = (step) => (String(step).split('.')[1] || '').length;
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+
+// Value box: drag up/down to change (shift = fine), arrow keys step, double-click or Enter to type.
+function numBox(key, label, min, max, step, onChange) {
+  const el = document.createElement('div');
+  el.className = 'num';
+  el.innerHTML = `<div class="cap" title="${label}">${label}</div>
+    <div class="box" tabindex="0" role="slider" aria-label="${label}" aria-valuemin="${min}" aria-valuemax="${max}"
+         title="Drag up/down to change, shift for fine, double-click to type"><div class="fill"></div><span class="val"></span></div>`;
+  const box = el.querySelector('.box'), fill = el.querySelector('.fill'), val = el.querySelector('.val');
+  const dec = decimalsOf(step);
+  const render = () => {
+    fill.style.width = ((S[key] - min) / (max - min) * 100) + '%';
+    val.textContent = S[key].toFixed(dec);
+    box.setAttribute('aria-valuenow', S[key]);
+  };
+  const set = (v) => {
+    v = +clamp(Math.round(v / step) * step, min, max).toFixed(dec);
+    if (v === S[key]) return;
+    S[key] = v;
+    render();
+    onChange?.();
+  };
+  let drag = null;
+  box.addEventListener('pointerdown', (e) => {
+    if (el.classList.contains('editing')) return;
+    drag = { y: e.clientY, n: (S[key] - min) / (max - min), moved: false };
+    box.setPointerCapture(e.pointerId);
+  });
+  box.addEventListener('pointermove', (e) => {
+    if (!drag) return;
+    const dy = e.clientY - drag.y;
+    if (!drag.moved && Math.abs(dy) < 2) return;
+    drag.moved = true;
+    set(min + clamp(drag.n - dy * (e.shiftKey ? 0.001 : 0.005), 0, 1) * (max - min));
+  });
+  box.addEventListener('pointerup', () => drag = null);
+  box.addEventListener('keydown', (e) => {
+    const k = { ArrowUp: 1, ArrowRight: 1, ArrowDown: -1, ArrowLeft: -1 }[e.key];
+    if (k) { e.preventDefault(); set(S[key] + k * step * (e.shiftKey ? 10 : 1)); }
+    else if (e.key === 'Enter') { e.preventDefault(); edit(); }
+  });
+  box.addEventListener('dblclick', edit);
+  function edit() {
+    if (el.classList.contains('editing')) return;
+    el.classList.add('editing');
+    const input = document.createElement('input');
+    input.value = S[key];
+    box.appendChild(input);
+    input.focus();
+    input.select();
+    let closed = false;
+    const done = (commit) => {
+      if (closed) return;
+      closed = true;
+      const v = parseFloat(input.value);
+      input.remove();
+      el.classList.remove('editing');
+      if (commit && isFinite(v)) set(v);
+      box.focus();
+    };
+    input.onkeydown = (e) => {
+      e.stopPropagation();
+      if (e.key === 'Enter') done(true);
+      else if (e.key === 'Escape') done(false);
+    };
+    input.onblur = () => done(true);
+  }
+  render();
+  return el;
+}
+
+// Segmented selector, one cell lit.
+function segmented(key, label, options, onChange) {
+  const el = document.createElement('div');
+  el.className = 'num wide';
+  el.innerHTML = `<div class="cap">${label}</div><div class="seg" role="radiogroup" aria-label="${label}">${
+    options.map(([v, t]) => `<button type="button" role="radio" data-v="${v}">${t}</button>`).join('')}</div>`;
+  const buttons = [...el.querySelectorAll('button')];
+  const render = () => buttons.forEach(b => { const on = +b.dataset.v === S[key]; b.classList.toggle('on', on); b.setAttribute('aria-checked', on); });
+  buttons.forEach(b => b.onclick = () => { S[key] = +b.dataset.v; render(); onChange?.(); });
+  render();
+  return el;
+}
+
+let grid = null;
+for (const c of controls) {
+  if (c.select) { grid.appendChild(segmented(c.select, c.label, c.options, c.onChange)); continue; }
+  if (c.length === 1) {
+    const fs = document.createElement('fieldset');
+    fs.className = 'panel';
+    fs.style.setProperty('--c', panelColor[c[0]]);
+    fs.innerHTML = `<legend>${c[0]}</legend><div class="grid"></div>`;
+    fs.querySelector('.grid').style.setProperty('--c', panelColor[c[0]]);
+    panel.appendChild(fs);
+    grid = fs.querySelector('.grid');
+    continue;
+  }
+  const [key, label, min, max, step, onChange] = c;
+  const el = numBox(key, label, min, max, step, onChange);
+  el.style.setProperty('--c', grid.style.getPropertyValue('--c'));
+  grid.appendChild(el);
+  rows[key] = el;
+}
+for (const el of panel.querySelectorAll('.seg')) el.style.setProperty('--c', el.closest('.grid').style.getPropertyValue('--c'));
+// Edge tear only applies to the single sheet; the layer sliders only to layered fill.
+function showLayerRows() {
+  for (const k of ['split', 'reach', 'round', 'memory']) rows[k].style.display = S.layered ? '' : 'none';
+  rows.tear.style.display = S.layered ? 'none' : '';
+  if (bgMesh) bgMesh.visible = !!S.layered;
+}
+// The affine toggle sits at the end of the Look panel.
+const affineBtn = document.createElement('button');
+affineBtn.className = 'latch wide';
+affineBtn.style.setProperty('--c', 'var(--steel)');
+affineBtn.textContent = 'Affine texture warp';
+affineBtn.setAttribute('aria-pressed', 'true');
+const renderAffine = () => { affineBtn.classList.toggle('lit', !!S.affine); affineBtn.setAttribute('aria-pressed', !!S.affine); };
+affineBtn.onclick = () => { S.affine = S.affine ? 0 : 1; renderAffine(); };
+rows.levels.after(affineBtn);
+renderAffine();
+
+// ---------- three.js ----------
+const renderer = new THREE.WebGLRenderer({ antialias: false, preserveDrawingBuffer: true });
+renderer.setPixelRatio(1);
+$('stage').appendChild(renderer.domElement);
+const scene = new THREE.Scene();
+const FOG_COLOR = new THREE.Color(0x201f1e);   // graphite stage
+scene.background = FOG_COLOR;
+const camera = new THREE.PerspectiveCamera(S.fov, 4 / 3, 0.05, 200);
+
+let aspect = 4 / 3;
+let gridRows = 36;
+
+const NEAR = 1;
+const farOf = () => NEAR + S.depthRange;
+
+// Captured frame (shared by depth + color), and downscaled texture canvas
+const capCanvas = document.createElement('canvas');
+const capCtx = capCanvas.getContext('2d', { willReadFrequently: true });
+const texCanvas = document.createElement('canvas');
+const texCtx = texCanvas.getContext('2d');
+const colorTex = new THREE.CanvasTexture(texCanvas);
+colorTex.magFilter = colorTex.minFilter = THREE.NearestFilter;
+colorTex.generateMipmaps = false;
+colorTex.wrapS = colorTex.wrapT = THREE.MirroredRepeatWrapping;
+// One texel per color patch: the frame area-averaged down to grid resolution.
+const avgCanvas = document.createElement('canvas');
+const avgCtx = avgCanvas.getContext('2d');
+const avgTex = new THREE.CanvasTexture(avgCanvas);
+avgTex.magFilter = avgTex.minFilter = THREE.NearestFilter;
+avgTex.generateMipmaps = false;
+avgTex.wrapS = avgTex.wrapT = THREE.MirroredRepeatWrapping;
+
+let depthTex = null;     // (cols+1) x (rows+1) RG float texture for the main mesh
+let bgDepthTex = null;   // same, for the background layer
+let gridDepth = null;    // smoothed per-vertex normalized depth (1 = near)
+let fgData = null, bgData = null, layerMask = null;
+let normLo = null, normHi = null;
+
+const material = new THREE.ShaderMaterial({
+  side: THREE.DoubleSide,
+  uniforms: {
+    uDepth: { value: null }, uTex: { value: colorTex }, uAvg: { value: avgTex }, uFlat: { value: 1 }, uPatch: { value: 1 },
+    uGrid: { value: new THREE.Vector2() }, uMarginCells: { value: new THREE.Vector2() }, uNear: { value: NEAR }, uFar: { value: 7 },
+    uTanHalf: { value: 0 }, uAspect: { value: 1 }, uRes: { value: new THREE.Vector2() },
+    uSnap: { value: 1 }, uAffine: { value: 1 }, uTear: { value: 0.1 }, uShade: { value: 0.5 },
+    uFogColor: { value: FOG_COLOR }, uFogNear: { value: 2 }, uFogFar: { value: 7 }, uFogAmt: { value: 0.7 },
+    uDither: { value: 1 }, uLevels: { value: 31 },
+  },
+  vertexShader: /* glsl */`
+    uniform sampler2D uDepth, uAvg;
+    uniform vec2 uGrid, uRes, uMarginCells;
+    uniform float uNear, uFar, uTanHalf, uAspect, uSnap, uAffine, uPatch;
+#ifndef BACKDROP
+    attribute vec2 faceUv;                         // triangle centroid, same for all 3 vertices
+#endif
+    varying vec2 vUvA;
+    varying float vW, vTear, vMask;
+    varying vec3 vViewPos, vFlatColor;
+    // Depth texture: r = depth used for position, g = depth used for tearing
+    // (background layer: g = where the layer is shown).
+    // Outside the frame, depth is mirrored back in so the extended mesh continues the scene.
+    vec2 dAt2(vec2 g) {
+      g = uGrid - abs(uGrid - abs(g));
+      g = clamp(g, vec2(0.0), uGrid);
+      return texture2D(uDepth, (g + 0.5) / (uGrid + 1.0)).rg;
+    }
+    float dAt(vec2 g) { return dAt2(g).g; }
+    float distOf(float d) { return 1.0 / mix(1.0 / uFar, 1.0 / uNear, d); }
+    void main() {
+#ifdef BACKDROP
+      // Flat, oversized layer behind everything: fills tear holes and anything the main mesh can't cover.
+      vec2 uvE = mix(vec2(-2.0), vec2(3.0), uv);
+      float z = uFar * 1.02;
+      vTear = 0.0;
+      vMask = 1.0;
+      vFlatColor = texture2D(uAvg, uvE).rgb;
+#else
+      vec2 gc = faceUv * (uGrid + 2.0 * uMarginCells) - uMarginCells;
+      vFlatColor = texture2D(uAvg, (floor(gc / uPatch) + 0.5) * uPatch / uGrid).rgb;
+      vec2 g = floor(uv * (uGrid + 2.0 * uMarginCells) + 0.5) - uMarginCells;
+      vec2 uvE = g / uGrid;                        // < 0 or > 1 in the margin around the frame
+      vec2 gt = vec2(g.x, uGrid.y - g.y);         // depth rows are top-down
+      vec2 s = dAt2(gt);
+      float z = distOf(s.r);
+      vMask = 1.0;
+  #ifdef LAYER_BG
+      vMask = s.g;
+      vTear = 0.0;
+  #else
+      float zt = distOf(s.g);
+      float m = 0.0;
+      m = max(m, abs(distOf(dAt(gt + vec2(1, 0))) - zt));
+      m = max(m, abs(distOf(dAt(gt - vec2(1, 0))) - zt));
+      m = max(m, abs(distOf(dAt(gt + vec2(0, 1))) - zt));
+      m = max(m, abs(distOf(dAt(gt - vec2(0, 1))) - zt));
+      vTear = m / zt;
+  #endif
+#endif
+      vec3 p = vec3((uvE.x * 2.0 - 1.0) * uTanHalf * uAspect * z, (uvE.y * 2.0 - 1.0) * uTanHalf * z, -z);
+      vec4 mv = modelViewMatrix * vec4(p, 1.0);
+      vViewPos = mv.xyz;
+      vec4 clip = projectionMatrix * mv;
+      if (uSnap > 0.0) {                            // PS1: integer screen-space vertices
+        vec2 grid = uRes * 0.5 / uSnap;
+        clip.xy = floor(clip.xy / clip.w * grid + 0.5) / grid * clip.w;
+      }
+      float w = mix(1.0, clip.w, uAffine);         // affine = undo perspective-correct interpolation
+      vUvA = uvE * w;
+      vW = w;
+      gl_Position = clip;
+    }`,
+  fragmentShader: /* glsl */`
+    uniform sampler2D uTex;
+    uniform float uTear, uShade, uFogNear, uFogFar, uFogAmt, uDither, uLevels, uFlat;
+    uniform vec3 uFogColor;
+    varying vec2 vUvA;
+    varying float vW, vTear, vMask;
+    varying vec3 vViewPos, vFlatColor;
+    float bayer4(vec2 p) {
+      vec2 q = mod(floor(p), 4.0);
+      float m[16] = float[16](0., 8., 2., 10., 12., 4., 14., 6., 3., 11., 1., 9., 15., 7., 13., 5.);
+      return (m[int(q.x) + int(q.y) * 4] + 0.5) / 16.0;
+    }
+    void main() {
+      if (uTear > 0.0 && vTear > uTear) discard;
+      if (vMask < 0.5) discard;
+      vec3 c = mix(texture2D(uTex, vUvA / vW).rgb, vFlatColor, uFlat);
+      vec3 n = normalize(cross(dFdx(vViewPos), dFdy(vViewPos)));
+      float l = abs(dot(n, normalize(vec3(-0.4, 0.5, 0.75)))) * 0.85 + 0.3;
+      c *= mix(1.0, l, uShade);
+      c = mix(c, uFogColor, smoothstep(uFogNear, uFogFar, length(vViewPos)) * uFogAmt);
+      c += (bayer4(gl_FragCoord.xy) - 0.5) * uDither / uLevels;
+      c = floor(clamp(c, 0.0, 1.0) * uLevels + 0.5) / uLevels;
+      gl_FragColor = vec4(c, 1.0);
+    }`,
+});
+// Same shader and (shared) uniforms, compiled as a flat far-away layer.
+const backdropMaterial = new THREE.ShaderMaterial({
+  side: THREE.DoubleSide, uniforms: material.uniforms, defines: { BACKDROP: 1 },
+  vertexShader: material.vertexShader, fragmentShader: material.fragmentShader,
+});
+const backdrop = new THREE.Mesh(new THREE.PlaneGeometry(1, 1, 16, 16), backdropMaterial);
+backdrop.frustumCulled = false;
+backdrop.visible = false;
+scene.add(backdrop);
+
+// Background layer: rebuilt scene behind the subject's edges (inpainted depth + color).
+const bgCanvas = document.createElement('canvas');
+const bgCtx = bgCanvas.getContext('2d', { willReadFrequently: true });
+const bgTex = new THREE.CanvasTexture(bgCanvas);
+const bgAvgCanvas = document.createElement('canvas');
+const bgAvgCtx = bgAvgCanvas.getContext('2d');
+const bgAvgTex = new THREE.CanvasTexture(bgAvgCanvas);
+for (const t of [bgTex, bgAvgTex]) {
+  t.magFilter = t.minFilter = THREE.NearestFilter;
+  t.generateMipmaps = false;
+  t.wrapS = t.wrapT = THREE.MirroredRepeatWrapping;
+}
+const bgMaterial = new THREE.ShaderMaterial({
+  side: THREE.DoubleSide, defines: { LAYER_BG: 1 },
+  uniforms: { ...material.uniforms, uDepth: { value: null }, uTex: { value: bgTex }, uAvg: { value: bgAvgTex } },
+  vertexShader: material.vertexShader, fragmentShader: material.fragmentShader,
+  polygonOffset: true, polygonOffsetFactor: 2, polygonOffsetUnits: 2,
+});
+let bgMesh = null;
+let mesh = null;
+
+function rebuildMesh() {
+  const mc = Math.round(S.fill * S.gridCols), mr = Math.round(S.fill * gridRows);
+  if (mesh) { mesh.geometry.dispose(); scene.remove(mesh); }
+  // Non-indexed so every triangle can carry its own centroid (for flat per-face color).
+  const geo = new THREE.PlaneGeometry(1, 1, S.gridCols + 2 * mc, gridRows + 2 * mr).toNonIndexed();
+  const uv = geo.attributes.uv.array, face = new Float32Array(uv.length);
+  for (let i = 0; i < uv.length; i += 6) {
+    const cx = (uv[i] + uv[i + 2] + uv[i + 4]) / 3, cy = (uv[i + 1] + uv[i + 3] + uv[i + 5]) / 3;
+    for (let k = 0; k < 6; k += 2) { face[i + k] = cx; face[i + k + 1] = cy; }
+  }
+  geo.setAttribute('faceUv', new THREE.BufferAttribute(face, 2));
+  mesh = new THREE.Mesh(geo, material);
+  mesh.frustumCulled = false;
+  scene.add(mesh);
+  if (bgMesh) scene.remove(bgMesh);
+  bgMesh = new THREE.Mesh(geo, bgMaterial);
+  bgMesh.frustumCulled = false;
+  bgMesh.visible = !!S.layered;
+  scene.add(bgMesh);
+  material.uniforms.uMarginCells.value.set(mc, mr);
+  backdrop.visible = S.fill > 0;
+}
+
+function rebuildGrid() {
+  gridRows = Math.max(2, Math.round(S.gridCols / aspect));
+  rebuildMesh();
+  const w = S.gridCols + 1, h = gridRows + 1;
+  depthTex?.dispose();
+  bgDepthTex?.dispose();
+  gridDepth = new Float32Array(w * h).fill(0.5);
+  fgData = new Float32Array(w * h * 2).fill(0.5);
+  bgData = new Float32Array(w * h * 2);
+  layerMask = new Uint8Array(w * h);
+  const mk = (data) => {
+    const t = new THREE.DataTexture(data, w, h, THREE.RGFormat, THREE.FloatType);
+    t.magFilter = t.minFilter = THREE.NearestFilter;
+    t.needsUpdate = true;
+    return t;
+  };
+  depthTex = mk(fgData);
+  bgDepthTex = mk(bgData);
+  material.uniforms.uDepth.value = depthTex;
+  bgMaterial.uniforms.uDepth.value = bgDepthTex;
+  material.uniforms.uGrid.value.set(S.gridCols, gridRows);
+  firstDepth = true;
+  if (lastDepth) applyDepth(lastDepth, true);
+}
+
+function resizeRender() {
+  const w = Math.round(S.renderW / 2) * 2;
+  const h = Math.round(w / aspect / 2) * 2;
+  renderer.setSize(w, h, false);
+  material.uniforms.uRes.value.set(w, h);
+  fitCanvas();
+  updateQualityHint(w, h);
+  $('info').textContent = `${depthDevice} · ${w}×${h} render`;
+}
+// Export size for a quality option. Integer upscales are capped at 4K so H.264 can still encode them.
+function exportSize(w, h, opt) {
+  if (opt === '1080') return { outW: Math.round(1080 * w / h / 2) * 2, outH: 1080, scale: Math.ceil(1080 / h), fixed: true };
+  const long = Math.max(w, h), short = Math.min(w, h);
+  const scale = Math.max(1, Math.min(+opt, Math.floor(Math.min(3840 / long, 2160 / short))));
+  return { outW: w * scale, outH: h * scale, scale, fixed: false };
+}
+function updateQualityHint(w, h) {
+  const fmt = (opt) => { const s = exportSize(w, h, opt); return `${s.outW}×${s.outH}`; };
+  $('scale').title = `Low: ${fmt('2')}\nMedium: ${fmt('4')}\nHigh: ${fmt('1080')}`;
+}
+function fitCanvas() {
+  const stage = $('stage'), c = renderer.domElement;
+  const k = Math.min(stage.clientWidth / c.width, stage.clientHeight / c.height);
+  c.style.width = Math.floor(c.width * k) + 'px';
+  c.style.height = Math.floor(c.height * k) + 'px';
+}
+addEventListener('resize', fitCanvas);
+
+// ---------- depth model ----------
+let depthPipe = null, depthDevice = '';
+(async () => {
+  const device = depthDevice = navigator.gpu ? 'webgpu' : 'wasm';
+  try {
+    depthPipe = await pipeline('depth-estimation', 'onnx-community/depth-anything-v2-small', {
+      device, dtype: device === 'webgpu' ? 'fp32' : 'q8',
+      progress_callback: (p) => { if (p.status === 'progress' && p.file?.endsWith('.onnx')) setStatus(`Loading depth model… ${Math.round(p.progress)}%`); },
+    });
+    setStatus(`Depth model ready (${device}). Open a video.`);
+    modelReady();
+  } catch (e) {
+    console.error(e);
+    setStatus('Failed to load depth model: ' + e.message);
+  }
+})();
+
+let lastDepth = null;   // { data, w, h }
+let firstDepth = true;
+
+async function estimateDepth() {
+  const img = RawImage.fromCanvas(capCanvas);
+  const out = await depthPipe(img);
+  const t = out.predicted_depth;
+  const dims = t.dims;
+  return { data: t.data, w: dims[dims.length - 1], h: dims[dims.length - 2] };
+}
+
+// Area-average the depth map down to one value per grid vertex, normalize with smoothed range, then temporal EMA.
+// dt = video seconds since the previous depth frame. Smoothing is defined per 1/30 s so preview
+// (which only gets a few depth frames per second) behaves the same as export (every frame).
+function applyDepth(d, instant = false, dt = 1 / 30) {
+  lastDepth = d;
+  const cols = S.gridCols, rows = gridRows, W = cols + 1, H = rows + 1;
+  const acc = new Float32Array(W * H), cnt = new Float32Array(W * H);
+  let lo = Infinity, hi = -Infinity;
+  for (let y = 0; y < d.h; y++) {
+    const gy = Math.min(rows, Math.round((y + 0.5) / d.h * rows));
+    for (let x = 0; x < d.w; x++) {
+      const v = d.data[y * d.w + x];
+      const gx = Math.min(cols, Math.round((x + 0.5) / d.w * cols));
+      acc[gy * W + gx] += v; cnt[gy * W + gx]++;
+      if (v < lo) lo = v; if (v > hi) hi = v;
+    }
+  }
+  const a = (firstDepth || instant) ? 0 : Math.pow(S.temporal, Math.min(15, Math.max(0.5, dt * 30)));
+  normLo = firstDepth ? lo : normLo * a + lo * (1 - a);
+  normHi = firstDepth ? hi : normHi * a + hi * (1 - a);
+  const span = Math.max(1e-6, normHi - normLo);
+  for (let i = 0; i < W * H; i++) {
+    const v = cnt[i] ? acc[i] / cnt[i] : (normLo + normHi) / 2;
+    const n = Math.min(1, Math.max(0, (v - normLo) / span));
+    gridDepth[i] = firstDepth || instant ? n : gridDepth[i] * a + n * (1 - a);
+  }
+  firstDepth = false;
+  buildLayers();
+}
+
+// Sliding-window minimum (separable), i.e. the farthest depth within r cells.
+function erode(src, W, H, r) {
+  const tmp = new Float32Array(W * H), out = new Float32Array(W * H);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    let m = Infinity;
+    for (let k = Math.max(0, x - r), e = Math.min(W - 1, x + r); k <= e; k++) m = Math.min(m, src[y * W + k]);
+    tmp[y * W + x] = m;
+  }
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    let m = Infinity;
+    for (let k = Math.max(0, y - r), e = Math.min(H - 1, y + r); k <= e; k++) m = Math.min(m, tmp[k * W + x]);
+    out[y * W + x] = m;
+  }
+  return out;
+}
+
+// Splits the depth grid into the subject (main mesh) and a background layer behind its edges.
+// Writes fgData (r: position depth with rounded edges, g: original depth for tearing)
+// and bgData (r: background depth, g: where the background layer is shown).
+function buildLayers() {
+  const W = S.gridCols + 1, H = gridRows + 1, N = W * H, d = gridDepth;
+  if (!S.layered) {
+    for (let i = 0; i < N; i++) fgData[2 * i] = fgData[2 * i + 1] = d[i];
+    depthTex.needsUpdate = true;
+    return;
+  }
+  const far = farOf(), k0 = 1 / far, k1 = 1 / NEAR - 1 / far;
+  const dist = (v) => 1 / (k0 + k1 * v), disp = (z) => (1 / z - k0) / k1;
+  const R = Math.max(2, Math.round(S.reach * S.gridCols));
+
+  // Band: cells within R of something much farther away, i.e. the subject side of an edge.
+  const e = erode(d, W, H, R);
+  const band = new Uint8Array(N);
+  for (let i = 0; i < N; i++) band[i] = dist(e[i]) / dist(d[i]) - 1 > S.split ? 1 : 0;
+
+  // Background depth: farthest nearby depth inside the band, then relaxed so it's smooth.
+  let bg = Float32Array.from(d);
+  for (let i = 0; i < N; i++) if (band[i]) bg[i] = e[i];
+  for (let it = 0; it < 12; it++) {
+    const nb = Float32Array.from(bg);
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      const i = y * W + x;
+      if (!band[i]) continue;
+      const a = (bg[y * W + Math.max(0, x - 1)] + bg[y * W + Math.min(W - 1, x + 1)] +
+                 bg[Math.max(0, y - 1) * W + x] + bg[Math.min(H - 1, y + 1) * W + x]) / 4;
+      nb[i] = Math.min(a, d[i]);
+    }
+    bg = nb;
+  }
+
+  // Show the background layer on the band plus one cell around it, so seams are covered.
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    let m = 0;
+    for (let dy = -1; dy <= 1 && !m; dy++) for (let dx = -1; dx <= 1 && !m; dx++) {
+      const xx = x + dx, yy = y + dy;
+      if (xx >= 0 && yy >= 0 && xx < W && yy < H && band[yy * W + xx]) m = 1;
+    }
+    layerMask[y * W + x] = m;
+  }
+
+  // Edge rounding: cells near a silhouette edge are pushed back on a circular profile,
+  // so the subject curves away instead of ending in a flat cutout.
+  const pos = Float32Array.from(d);
+  if (S.round > 0) {
+    const K = Math.max(2, Math.round(R * 0.6));
+    const steps = new Int16Array(N).fill(-1), queue = [];
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      const i = y * W + x;
+      if (!band[i]) continue;
+      const zi = dist(d[i]);
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const xx = x + dx, yy = y + dy;
+        if (xx < 0 || yy < 0 || xx >= W || yy >= H) continue;
+        if (dist(d[yy * W + xx]) / zi - 1 > S.split) { steps[i] = 0; queue.push(i); break; }
+      }
+    }
+    for (let q = 0; q < queue.length; q++) {
+      const i = queue[q], s = steps[i];
+      if (s >= K) continue;
+      const x = i % W, y = (i / W) | 0;
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const xx = x + dx, yy = y + dy;
+        if (xx < 0 || yy < 0 || xx >= W || yy >= H) continue;
+        const j = yy * W + xx;
+        if (band[j] && steps[j] < 0) { steps[j] = s + 1; queue.push(j); }
+      }
+    }
+    // Radius = the rounding width in world units at the subject's depth (a true quarter circle),
+    // never deeper than most of the gap to the background.
+    const cellPerZ = 2 * Math.tan(THREE.MathUtils.degToRad(S.fov) / 2) / gridRows;
+    for (let i = 0; i < N; i++) {
+      if (steps[i] < 0) continue;
+      const t = 1 - steps[i] / K;
+      const zf = dist(d[i]), gap = dist(bg[i]) - zf;
+      const radius = Math.min(K * cellPerZ * zf, 0.8 * gap);
+      pos[i] = disp(zf + S.round * radius * (1 - Math.sqrt(1 - t * t)));
+    }
+  }
+
+  for (let i = 0; i < N; i++) {
+    fgData[2 * i] = pos[i]; fgData[2 * i + 1] = d[i];
+    bgData[2 * i] = bg[i]; bgData[2 * i + 1] = layerMask[i];
+  }
+  depthTex.needsUpdate = true;
+  bgDepthTex.needsUpdate = true;
+}
+
+function captureFrame() {
+  const vw = video.videoWidth, vh = video.videoHeight;
+  // Big enough for both the depth model (518px) and the color texture.
+  const k = Math.min(1, Math.max(518, S.texW) / Math.max(vw, vh));
+  const w = Math.round(vw * k), h = Math.round(vh * k);
+  if (capCanvas.width !== w || capCanvas.height !== h) { capCanvas.width = w; capCanvas.height = h; }
+  capCtx.drawImage(video, 0, 0, w, h);
+}
+function uploadColor() {
+  if (!capCanvas.width) return;
+  const w = Math.round(S.texW), h = Math.max(1, Math.round(w / aspect));
+  if (texCanvas.width !== w || texCanvas.height !== h) { texCanvas.width = w; texCanvas.height = h; colorTex.dispose(); }
+  texCtx.imageSmoothingEnabled = true;
+  texCtx.drawImage(capCanvas, 0, 0, w, h);
+  colorTex.needsUpdate = true;
+  const aw = Math.max(1, Math.round(S.gridCols / S.patch)), ah = Math.max(1, Math.round(gridRows / S.patch));
+  if (avgCanvas.width !== aw || avgCanvas.height !== ah) { avgCanvas.width = aw; avgCanvas.height = ah; avgTex.dispose(); }
+  avgCtx.imageSmoothingEnabled = true;
+  avgCtx.imageSmoothingQuality = 'high';
+  avgCtx.drawImage(capCanvas, 0, 0, aw, ah);
+  avgTex.needsUpdate = true;
+  if (S.layered && lastDepth && layerMask) fillBackground(aw, ah);
+}
+
+// Clean plate: per pixel, the farthest surface seen recently (and its color). Background
+// revealed when the subject moves is remembered and reused behind the subject later.
+let plate = null, plateD = null, plateHas = null, plateW = 0, plateH = 0;
+function resetPlate() { plate = null; }
+
+// Background layer color: the frame with the subject's edge band removed, filled from the
+// clean plate where possible and inpainted from the surroundings elsewhere.
+function fillBackground(aw, ah) {
+  const BW = Math.max(16, Math.min(Math.round(S.texW), 384)), BH = Math.max(9, Math.round(BW / aspect));
+  if (bgCanvas.width !== BW || bgCanvas.height !== BH) { bgCanvas.width = BW; bgCanvas.height = BH; bgTex.dispose(); }
+  bgCtx.imageSmoothingEnabled = true;
+  bgCtx.imageSmoothingQuality = 'high';
+  bgCtx.drawImage(capCanvas, 0, 0, BW, BH);
+  const img = bgCtx.getImageData(0, 0, BW, BH), px = img.data, N = BW * BH;
+  if (!plate || plateW !== BW || plateH !== BH) {
+    plate = new Float32Array(N * 3); plateD = new Float32Array(N); plateHas = new Uint8Array(N);
+    plateW = BW; plateH = BH;
+  }
+  const cols = S.gridCols, rows = gridRows, W = cols + 1;
+  const D = lastDepth, span = Math.max(1e-6, normHi - normLo);
+  const useMem = S.memory > 0, forget = (1 - S.memory) * 0.25;
+  const C = new Float32Array(N * 3), A = new Float32Array(N);
+  for (let y = 0; y < BH; y++) {
+    const dy = Math.floor((y + 0.5) / BH * D.h) * D.w, gy = Math.round((y + 0.5) / BH * rows) * W;
+    for (let x = 0; x < BW; x++) {
+      const i = y * BW + x;
+      const dp = Math.min(1, Math.max(0, (D.data[dy + Math.floor((x + 0.5) / BW * D.w)] - normLo) / span));
+      const r = px[4 * i] / 255, g = px[4 * i + 1] / 255, b = px[4 * i + 2] / 255;
+      if (useMem) {
+        if (!plateHas[i] || dp <= plateD[i] + 0.02) {
+          const k = plateHas[i] ? 0.5 : 1;
+          plate[3 * i] += (r - plate[3 * i]) * k;
+          plate[3 * i + 1] += (g - plate[3 * i + 1]) * k;
+          plate[3 * i + 2] += (b - plate[3 * i + 2]) * k;
+          plateD[i] = dp; plateHas[i] = 1;
+        } else {
+          plateD[i] += (dp - plateD[i]) * forget;
+        }
+      }
+      if (!layerMask[gy + Math.round((x + 0.5) / BW * cols)]) {
+        C[3 * i] = r; C[3 * i + 1] = g; C[3 * i + 2] = b; A[i] = 1;
+      } else if (useMem && plateHas[i] && plateD[i] < dp - 0.05) {
+        C[3 * i] = plate[3 * i]; C[3 * i + 1] = plate[3 * i + 1]; C[3 * i + 2] = plate[3 * i + 2]; A[i] = 1;
+      }
+    }
+  }
+  pushPull(C, A, BW, BH);
+  for (let i = 0; i < N; i++) {
+    px[4 * i] = C[3 * i] * 255; px[4 * i + 1] = C[3 * i + 1] * 255; px[4 * i + 2] = C[3 * i + 2] * 255;
+  }
+  bgCtx.putImageData(img, 0, 0);
+  bgTex.needsUpdate = true;
+  if (bgAvgCanvas.width !== aw || bgAvgCanvas.height !== ah) { bgAvgCanvas.width = aw; bgAvgCanvas.height = ah; bgAvgTex.dispose(); }
+  bgAvgCtx.imageSmoothingEnabled = true;
+  bgAvgCtx.imageSmoothingQuality = 'high';
+  bgAvgCtx.drawImage(bgCanvas, 0, 0, aw, ah);
+  bgAvgTex.needsUpdate = true;
+}
+
+// Push-pull hole filling: average known pixels down a pyramid, then fill holes on the way back up.
+function pushPull(C, A, W, H) {
+  const levels = [{ C, A, W, H }];
+  while (levels.at(-1).W > 1 || levels.at(-1).H > 1) {
+    const p = levels.at(-1), w = Math.ceil(p.W / 2), h = Math.ceil(p.H / 2);
+    const c = new Float32Array(w * h * 3), a = new Float32Array(w * h);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      let sa = 0, sr = 0, sg = 0, sb = 0;
+      for (let oy = 0; oy < 2; oy++) for (let ox = 0; ox < 2; ox++) {
+        const xx = 2 * x + ox, yy = 2 * y + oy;
+        if (xx >= p.W || yy >= p.H) continue;
+        const j = yy * p.W + xx, wa = p.A[j];
+        sa += wa; sr += p.C[3 * j] * wa; sg += p.C[3 * j + 1] * wa; sb += p.C[3 * j + 2] * wa;
+      }
+      const i = y * w + x;
+      if (sa > 0) { c[3 * i] = sr / sa; c[3 * i + 1] = sg / sa; c[3 * i + 2] = sb / sa; }
+      a[i] = Math.min(1, sa);
+    }
+    levels.push({ C: c, A: a, W: w, H: h });
+  }
+  for (let l = levels.length - 2; l >= 0; l--) {
+    const f = levels[l], c = levels[l + 1];
+    for (let y = 0; y < f.H; y++) for (let x = 0; x < f.W; x++) {
+      const i = y * f.W + x, a = f.A[i];
+      if (a >= 1) continue;
+      const cx = Math.min(c.W - 1, Math.max(0, (x + 0.5) / 2 - 0.5)), cy = Math.min(c.H - 1, Math.max(0, (y + 0.5) / 2 - 0.5));
+      const x0 = Math.floor(cx), y0 = Math.floor(cy), x1 = Math.min(c.W - 1, x0 + 1), y1 = Math.min(c.H - 1, y0 + 1);
+      const fx = cx - x0, fy = cy - y0;
+      for (let ch = 0; ch < 3; ch++) {
+        const up = (c.C[3 * (y0 * c.W + x0) + ch] * (1 - fx) + c.C[3 * (y0 * c.W + x1) + ch] * fx) * (1 - fy) +
+                   (c.C[3 * (y1 * c.W + x0) + ch] * (1 - fx) + c.C[3 * (y1 * c.W + x1) + ch] * fx) * fy;
+        f.C[3 * i + ch] = f.C[3 * i + ch] * a + up * (1 - a);
+      }
+      f.A[i] = 1;
+    }
+  }
+}
+
+// ---------- source handling ----------
+let sourceReady = false, isWebcam = false, needsDepth = false, exporting = false;
+
+function onSourceLoaded() {
+  aspect = video.videoWidth / video.videoHeight;
+  camera.aspect = aspect;
+  $('hint').hidden = true;
+  $('srcName').textContent = isWebcam ? 'Webcam' : (srcName || '');
+  resetPlate();
+  inT = outT = null;
+  rebuildGrid();
+  resizeRender();
+  sourceReady = true;
+  needsDepth = true;
+  $('play').disabled = isWebcam;
+  modelReady();
+}
+function modelReady() {
+  $('export').disabled = !(depthPipe && sourceReady && !isWebcam && window.VideoEncoder);
+}
+video.addEventListener('loadeddata', onSourceLoaded);
+video.addEventListener('seeked', () => { needsDepth = true; });
+
+let srcName = '';
+function loadFile(f) {
+  if (!f || !f.type.startsWith('video')) return;
+  stopWebcam();
+  isWebcam = false;
+  video.srcObject = null;
+  srcName = f.name;
+  video.src = URL.createObjectURL(f);
+  video.play().then(() => $('play').textContent = 'Pause').catch(() => {});
+}
+$('file').onchange = (e) => loadFile(e.target.files[0]);
+$('file').parentElement.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); $('file').click(); } };
+video.addEventListener('play', () => { $('play').textContent = 'Pause'; $('play').classList.add('lit'); });
+video.addEventListener('pause', () => { $('play').textContent = 'Play'; $('play').classList.remove('lit'); });
+const stage = $('stage');
+stage.ondragover = (e) => { e.preventDefault(); stage.classList.add('drag'); };
+stage.ondragleave = () => stage.classList.remove('drag');
+stage.ondrop = (e) => { e.preventDefault(); stage.classList.remove('drag'); loadFile(e.dataTransfer.files[0]); };
+
+$('play').onclick = () => {
+  if (video.paused) { video.play(); $('play').textContent = 'Pause'; }
+  else { video.pause(); $('play').textContent = 'Play'; }
+};
+// ---------- timeline ----------
+const seek = $('seek');
+const fmt = (t) => `${Math.floor(t / 60)}:${(t % 60).toFixed(1).padStart(4, '0')}`;
+let scrubbing = false;
+function updateTimeline() {
+  const dur = isFinite(video.duration) ? video.duration : 0;
+  seek.disabled = isWebcam || !dur || exporting;
+  if (!scrubbing && dur) seek.value = video.currentTime / dur;
+  seek.style.setProperty('--p', (+seek.value * 100) + '%');
+  $('time').textContent = dur ? `${fmt(video.currentTime)} / ${fmt(dur)}` : (isWebcam ? 'live' : '0:00.0 / 0:00.0');
+  for (const id of ['setIn', 'setOut']) $(id).disabled = seek.disabled;
+  $('clearIO').disabled = seek.disabled || (inT == null && outT == null);
+  const marked = dur && (inT != null || outT != null);
+  $('range').hidden = !marked;
+  $('ioTime').textContent = '';
+  if (marked) {
+    const [a, b] = playRange();
+    // The slider thumb (~16px) insets the track, so the bar is inset to match.
+    $('range').style.left = `calc(8px + ${a / dur} * (100% - 16px))`;
+    $('range').style.width = `calc(${(b - a) / dur} * (100% - 16px))`;
+    $('ioTime').textContent = `${fmt(a)}–${fmt(b)} (${(b - a).toFixed(1)}s)`;
+  }
+}
+
+// ---------- in / out points ----------
+let inT = null, outT = null;
+function playRange() {
+  const dur = isFinite(video.duration) ? video.duration : 0;
+  return [inT ?? 0, outT ?? dur];
+}
+function setIn() {
+  inT = video.currentTime;
+  if (outT != null && outT <= inT) outT = null;
+  updateTimeline();
+}
+function setOut() {
+  outT = video.currentTime;
+  if (inT != null && inT >= outT) inT = null;
+  if (outT <= 0) outT = null;
+  updateTimeline();
+}
+function clearIO() { inT = outT = null; updateTimeline(); }
+$('setIn').onclick = setIn;
+$('setOut').onclick = setOut;
+$('clearIO').onclick = clearIO;
+addEventListener('keydown', (e) => {
+  if (e.metaKey || e.ctrlKey || e.altKey || seek.disabled || e.target.tagName === 'SELECT') return;
+  const k = e.key.toLowerCase();
+  if (k === 'i') setIn(); else if (k === 'o') setOut(); else if (k === 'x') clearIO();
+});
+// Playback loops inside the marked range.
+function loopRange() {
+  if (video.paused || exporting || (inT == null && outT == null)) return;
+  const [a, b] = playRange();
+  if (video.currentTime >= b - 0.01 || video.currentTime < a - 0.05) video.currentTime = a;
+}
+seek.addEventListener('pointerdown', () => scrubbing = true);
+seek.addEventListener('pointerup', () => scrubbing = false);
+seek.addEventListener('input', () => {
+  if (isFinite(video.duration)) video.currentTime = +seek.value * video.duration;
+});
+video.addEventListener('timeupdate', updateTimeline);
+video.addEventListener('durationchange', updateTimeline);
+
+function stopWebcam() { video.srcObject?.getTracks().forEach(t => t.stop()); }
+$('cam').onclick = async () => {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 } });
+    isWebcam = true;
+    video.removeAttribute('src');
+    video.srcObject = stream;
+    await video.play();
+  } catch (e) { setStatus('Webcam unavailable: ' + e.message); }
+};
+
+// ---------- camera ----------
+let userYaw = 0, userPitch = 0, drag = null;
+renderer.domElement.addEventListener('pointerdown', (e) => { drag = { x: e.clientX, y: e.clientY, yaw: userYaw, pitch: userPitch }; renderer.domElement.setPointerCapture(e.pointerId); });
+renderer.domElement.addEventListener('pointermove', (e) => {
+  if (!drag) return;
+  userYaw = drag.yaw - (e.clientX - drag.x) * 0.2;
+  userPitch = Math.max(-60, Math.min(60, drag.pitch + (e.clientY - drag.y) * 0.2));
+});
+renderer.domElement.addEventListener('pointerup', () => drag = null);
+renderer.domElement.addEventListener('dblclick', () => { userYaw = userPitch = 0; });
+
+function updateUniforms(t) {
+  const far = farOf();
+  const u = material.uniforms;
+  u.uFar.value = far;
+  u.uTanHalf.value = Math.tan(THREE.MathUtils.degToRad(S.fov) / 2);
+  u.uAspect.value = aspect;
+  u.uSnap.value = S.snap;
+  u.uAffine.value = S.affine;
+  u.uTear.value = S.layered ? S.split : S.tear;
+  u.uShade.value = S.shade;
+  u.uFlat.value = S.flat;
+  u.uPatch.value = S.patch;
+  u.uFogNear.value = NEAR + (far - NEAR) * S.fogStart;
+  u.uFogFar.value = far * 1.05;
+  u.uFogAmt.value = S.fog;
+  u.uDither.value = S.dither;
+  u.uLevels.value = S.levels;
+
+  // Orbit around a pivot at mid-depth; yaw = pitch = 0 reproduces the original viewpoint.
+  camera.fov = S.fov;
+  camera.updateProjectionMatrix();
+  const pivotDist = 2 / (1 / NEAR + 1 / far);
+  const yaw = THREE.MathUtils.degToRad(userYaw + S.sway * Math.sin(t * S.swaySpeed * 2));
+  const pitch = THREE.MathUtils.degToRad(userPitch + S.sway * 0.35 * Math.sin(t * S.swaySpeed * 1.3));
+  const pivot = new THREE.Vector3(0, 0, -pivotDist);
+  camera.position.set(
+    pivot.x + Math.sin(yaw) * Math.cos(pitch) * pivotDist,
+    pivot.y + Math.sin(pitch) * pivotDist,
+    pivot.z + Math.cos(yaw) * Math.cos(pitch) * pivotDist);
+  camera.lookAt(pivot);
+}
+function renderFrame(t) { updateUniforms(t); renderer.render(scene, camera); }
+
+// ---------- live preview loop ----------
+let fpsCount = 0, fpsT = performance.now();
+async function depthLoop() {
+  for (;;) {
+    if (depthPipe && sourceReady && !exporting && video.readyState >= 2 && (needsDepth || !video.paused)) {
+      needsDepth = false;
+      const t = video.currentTime;
+      const dt = lastDepthT == null || t <= lastDepthT ? 1 / 30 : t - lastDepthT;
+      lastDepthT = t;
+      captureFrame();
+      // While paused (scrubbing), skip temporal smoothing so the previous position doesn't ghost in.
+      const paused = video.paused;
+      try { applyDepth(await estimateDepth(), paused, dt); } catch (e) { console.error(e); }
+      uploadColor();
+      fpsCount++;
+      const now = performance.now();
+      if (now - fpsT > 1000) { setStatus(`Preview · depth ${(fpsCount * 1000 / (now - fpsT)).toFixed(1)} fps`); fpsCount = 0; fpsT = now; }
+    } else {
+      await new Promise(r => setTimeout(r, 30));
+    }
+  }
+}
+let lastDepthT = null;
+depthLoop();
+showLayerRows();
+
+const t0 = performance.now();
+(function loop() {
+  requestAnimationFrame(loop);
+  if (sourceReady) { loopRange(); updateTimeline(); }
+  $('lamp').classList.toggle('on', exporting || !depthPipe || (sourceReady && !video.paused));
+  if (!exporting && mesh) renderFrame((performance.now() - t0) / 1000);
+})();
+
+// ---------- export ----------
+function seekTo(t) {
+  return new Promise((resolve) => {
+    // Prefer waiting for the decoded frame, but rVFC never fires in background tabs, so cap the wait.
+    const done = () => {
+      setTimeout(resolve, 60);
+      video.requestVideoFrameCallback?.(() => resolve());
+    };
+    video.addEventListener('seeked', done, { once: true });
+    video.currentTime = t;
+  });
+}
+
+async function pickCodec(width, height, framerate) {
+  for (const codec of ['avc1.640033', 'avc1.4d0033', 'avc1.42003e', 'avc1.42001f']) {
+    // Hard pixel edges and dithering compress poorly, so scale bitrate with pixel rate.
+    const bitrate = Math.min(60e6, Math.max(8e6, width * height * framerate * 0.15));
+    const cfg = { codec, width, height, bitrate, framerate };
+    try { if ((await VideoEncoder.isConfigSupported(cfg)).supported) return cfg; } catch {}
+  }
+  throw new Error('No supported H.264 encoder config');
+}
+
+$('export').onclick = async () => {
+  if (exporting) return;
+  exporting = true;
+  $('export').disabled = $('play').disabled = true;
+  $('dl').hidden = true;
+  const wasPlaying = !video.paused;
+  video.pause();
+  try {
+    const fps = +$('fps').value, scaleOpt = $('scale').value;
+    const src = renderer.domElement;
+    const { outW, outH, scale, fixed: fixedH } = exportSize(src.width, src.height, scaleOpt);
+    const out = document.createElement('canvas');
+    out.width = outW; out.height = outH;
+    const octx = out.getContext('2d');
+    // Fixed heights rarely divide evenly: upscale by an integer with nearest-neighbor, then
+    // smooth-downscale the small remainder so pixels stay uniform with only a sliver of blur.
+    let up = null;
+    if (fixedH) {
+      up = document.createElement('canvas');
+      up.width = src.width * scale; up.height = src.height * scale;
+      up.getContext('2d').imageSmoothingEnabled = false;
+      octx.imageSmoothingEnabled = true;
+      octx.imageSmoothingQuality = 'high';
+    } else {
+      octx.imageSmoothingEnabled = false;
+    }
+
+    const cfg = await pickCodec(outW, outH, fps);
+    const target = new ArrayBufferTarget();
+    const muxer = new Muxer({ target, video: { codec: 'avc', width: outW, height: outH, frameRate: fps }, fastStart: 'in-memory' });
+    let encErr = null;
+    const enc = new VideoEncoder({ output: (chunk, meta) => muxer.addVideoChunk(chunk, meta), error: (e) => encErr = e });
+    enc.configure(cfg);
+
+    const [start, end] = playRange();
+    const n = Math.max(1, Math.floor((end - start) * fps));
+    firstDepth = true;
+    resetPlate();
+    const tStart = performance.now();
+    for (let i = 0; i < n; i++) {
+      if (encErr) throw encErr;
+      const t = start + i / fps;
+      await seekTo(Math.min(t, video.duration - 0.001));
+      captureFrame();
+      applyDepth(await estimateDepth(), false, 1 / fps);
+      uploadColor();
+      renderFrame(t);
+      if (up) {
+        up.getContext('2d').drawImage(src, 0, 0, up.width, up.height);
+        octx.drawImage(up, 0, 0, outW, outH);
+      } else {
+        octx.drawImage(src, 0, 0, outW, outH);
+      }
+      const frame = new VideoFrame(out, { timestamp: Math.round(i * 1e6 / fps), duration: Math.round(1e6 / fps) });
+      enc.encode(frame, { keyFrame: i % (fps * 2) === 0 });
+      frame.close();
+      while (enc.encodeQueueSize > 8) await new Promise(r => setTimeout(r, 5));
+      $('progress').style.width = ((i + 1) / n * 100) + '%';
+      const el = (performance.now() - tStart) / 1000;
+      setStatus(`Exporting ${i + 1}/${n} · ${((i + 1) / el).toFixed(1)} fps · ~${Math.round(el / (i + 1) * (n - i - 1))}s left`);
+    }
+    await enc.flush();
+    muxer.finalize();
+    const url = URL.createObjectURL(new Blob([target.buffer], { type: 'video/mp4' }));
+    const a = $('dl');
+    a.href = url; a.download = 'psx.mp4'; a.hidden = false;
+    a.textContent = `Download psx.mp4 (${(target.buffer.byteLength / 1e6).toFixed(1)} MB)`;
+    setStatus(`Export done: ${n} frames, ${outW}×${outH}`);
+  } catch (e) {
+    console.error(e);
+    setStatus('Export failed: ' + e.message);
+  } finally {
+    exporting = false;
+    $('progress').style.width = '0';
+    $('play').disabled = false;
+    modelReady();
+    if (wasPlaying) video.play();
+  }
+};
+</script>
+</body>
+</html>
