@@ -18,7 +18,8 @@ Nothing is uploaded. The video, the depth model and the rendering all run locall
 - **Open video**, or drop a file onto the view. **Webcam** works for live preview.
 - Drag the view to orbit the camera; double-click to reset it.
 - Value boxes: drag up or down to change (Shift for fine), double-click or press Enter to type, arrow keys to step.
-- Timeline: **In** / **Out** (or the I and O keys) mark the range to export; **Clear** (X) removes it. Playback loops inside the range.
+- Timeline: **Play** (Space) and a playback speed menu sit on the left. Speed only affects the preview; exports keep the original timing.
+- **In** / **Out** (or the I and O keys) mark the range to export, and the range edges can be dragged to adjust it. **Clear** (X) removes it. Playback loops inside the range.
 - **Export MP4** renders every frame of the range. Output quality: Low = 2× render size, Medium = 4× (up to 4K), High = 1080p.
 
 ## Requirements

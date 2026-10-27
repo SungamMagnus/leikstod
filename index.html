@@ -93,8 +93,11 @@
   #seek::-webkit-slider-thumb { -webkit-appearance: none; width: 18px; height: 22px; margin-top: -7px; background: var(--paper); border: 1.2px solid var(--coral); border-radius: 3px; }
   #seek::-moz-range-thumb { width: 16px; height: 20px; background: var(--paper); border: 1.2px solid var(--coral); border-radius: 3px; }
   #seek:disabled { opacity: .4; cursor: default; }
-  #range { position: absolute; top: 50%; height: 18px; transform: translateY(-50%); z-index: 2; background: rgba(237, 129, 89, .16);
-           border-left: 2px solid var(--coral); border-right: 2px solid var(--coral); pointer-events: none; }
+  #range { position: absolute; top: 50%; height: 18px; transform: translateY(-50%); z-index: 2; background: rgba(237, 129, 89, .16); pointer-events: none; }
+  /* in/out handles: a wide invisible grab area around a thin coral bar */
+  .ioHandle { position: absolute; top: 50%; width: 14px; height: 28px; transform: translate(-50%, -50%); z-index: 3; cursor: ew-resize; touch-action: none; }
+  .ioHandle::after { content: ""; position: absolute; left: 5px; top: 2px; bottom: 2px; width: 3px; background: var(--coral); }
+  .ioHandle:hover::after, .ioHandle.dragging::after { left: 4px; width: 5px; }
   #ioTime { color: var(--coral); font-variant-numeric: tabular-nums; font-size: var(--t-sm); white-space: nowrap; }
   #time { color: var(--ink55); min-width: 120px; text-align: right; font-variant-numeric: tabular-nums; font-size: var(--t-sm); white-space: nowrap; }
 
@@ -118,7 +121,6 @@
   <div class="wordmark">Leikstöð</div>
   <label class="latch" tabindex="0">Open video<input id="file" type="file" accept="video/*" hidden></label>
   <button class="latch" id="cam">Webcam</button>
-  <button class="latch" id="play" style="--c: var(--amber)" disabled>Play</button>
   <div class="spacer"></div>
   <select class="drop" id="fps" title="Export frame rate"><option value="15">15 fps</option><option value="24">24 fps</option><option value="30" selected>30 fps</option></select>
   <select class="drop" id="scale" title="Low: 640×360&#10;Medium: 1280×720&#10;High: 1920×1080&#10;(for 16:9 video; updates when a video is loaded)"><option value="2">Low</option><option value="4" selected>Medium</option><option value="1080">High</option></select>
@@ -137,10 +139,15 @@
   <aside id="panel"></aside>
 </main>
 <div id="timeline">
+  <button class="latch" id="play" style="--c: var(--amber); min-width: 76px" title="Play / pause (space)" disabled>Play</button>
+  <select class="drop" id="speed" style="--c: var(--coral)" title="Playback speed (preview only; export always uses the original timing)">
+    <option value="0.25">0.25×</option><option value="0.5">0.5×</option><option value="0.75">0.75×</option>
+    <option value="1" selected>1×</option><option value="1.5">1.5×</option><option value="2">2×</option>
+  </select>
   <button class="latch" id="setIn" style="--c: var(--coral)" title="Set in point at the current time (I)" disabled>In</button>
   <button class="latch" id="setOut" style="--c: var(--coral)" title="Set out point at the current time (O)" disabled>Out</button>
   <button class="latch" id="clearIO" title="Clear in/out points (X)" disabled>Clear</button>
-  <div id="seekWrap"><div id="range" hidden></div><input id="seek" type="range" min="0" max="1" step="0.001" value="0" disabled></div>
+  <div id="seekWrap"><div id="range" hidden></div><div class="ioHandle" id="inHandle" hidden title="Drag to move the in point"></div><div class="ioHandle" id="outHandle" hidden title="Drag to move the out point"></div><input id="seek" type="range" min="0" max="1" step="0.001" value="0" disabled></div>
   <span id="ioTime"></span>
   <span id="time">0:00.0 / 0:00.0</span>
 </div>
@@ -930,6 +937,7 @@ stage.ondragover = (e) => { e.preventDefault(); stage.classList.add('drag'); };
 stage.ondragleave = () => stage.classList.remove('drag');
 stage.ondrop = (e) => { e.preventDefault(); stage.classList.remove('drag'); loadFile(e.dataTransfer.files[0]); };
 
+$('speed').onchange = (e) => { video.playbackRate = video.defaultPlaybackRate = +e.target.value; };
 $('play').onclick = () => {
   if (video.paused) { video.play(); $('play').textContent = 'Pause'; }
   else { video.pause(); $('play').textContent = 'Play'; }
@@ -947,13 +955,15 @@ function updateTimeline() {
   for (const id of ['setIn', 'setOut']) $(id).disabled = seek.disabled;
   $('clearIO').disabled = seek.disabled || (inT == null && outT == null);
   const marked = dur && (inT != null || outT != null);
-  $('range').hidden = !marked;
+  $('range').hidden = $('inHandle').hidden = $('outHandle').hidden = !marked || exporting;
   $('ioTime').textContent = '';
   if (marked) {
     const [a, b] = playRange();
     // The slider thumb (~16px) insets the track, so the bar is inset to match.
     $('range').style.left = `calc(8px + ${a / dur} * (100% - 16px))`;
     $('range').style.width = `calc(${(b - a) / dur} * (100% - 16px))`;
+    $('inHandle').style.left = `calc(8px + ${a / dur} * (100% - 16px))`;
+    $('outHandle').style.left = `calc(8px + ${b / dur} * (100% - 16px))`;
     $('ioTime').textContent = `${fmt(a)}–${fmt(b)} (${(b - a).toFixed(1)}s)`;
   }
 }
@@ -979,9 +989,41 @@ function clearIO() { inT = outT = null; updateTimeline(); }
 $('setIn').onclick = setIn;
 $('setOut').onclick = setOut;
 $('clearIO').onclick = clearIO;
+// Drag the range edges; the video follows the handle so you can see the frame you're landing on.
+function timeAtX(clientX) {
+  const r = $('seekWrap').getBoundingClientRect();
+  return clamp((clientX - r.left - 8) / (r.width - 16), 0, 1) * video.duration;
+}
+for (const [id, isIn] of [['inHandle', true], ['outHandle', false]]) {
+  const h = $(id);
+  let resume = false;
+  h.addEventListener('pointerdown', (e) => {
+    if (exporting) return;
+    e.preventDefault();
+    h.setPointerCapture(e.pointerId);
+    h.classList.add('dragging');
+    resume = !video.paused;
+    video.pause();
+  });
+  h.addEventListener('pointermove', (e) => {
+    if (!h.classList.contains('dragging')) return;
+    const t = timeAtX(e.clientX), [a, b] = playRange(), MIN = 0.1;
+    if (isIn) inT = Math.min(t, b - MIN); else outT = Math.max(t, a + MIN);
+    video.currentTime = isIn ? inT : outT;
+    updateTimeline();
+  });
+  const end = () => {
+    if (!h.classList.contains('dragging')) return;
+    h.classList.remove('dragging');
+    if (resume) { video.currentTime = playRange()[0]; video.play(); }
+  };
+  h.addEventListener('pointerup', end);
+  h.addEventListener('pointercancel', end);
+}
 addEventListener('keydown', (e) => {
   if (e.metaKey || e.ctrlKey || e.altKey || seek.disabled || e.target.tagName === 'SELECT') return;
   const k = e.key.toLowerCase();
+  if (k === ' ' && !['BUTTON', 'INPUT', 'LABEL'].includes(e.target.tagName) && !$('play').disabled) { e.preventDefault(); $('play').click(); return; }
   if (k === 'i') setIn(); else if (k === 'o') setOut(); else if (k === 'x') clearIO();
 });
 // Playback loops inside the marked range.
@@ -1185,8 +1227,8 @@ $('export').onclick = async () => {
     muxer.finalize();
     const url = URL.createObjectURL(new Blob([target.buffer], { type: 'video/mp4' }));
     const a = $('dl');
-    a.href = url; a.download = 'psx.mp4'; a.hidden = false;
-    a.textContent = `Download psx.mp4 (${(target.buffer.byteLength / 1e6).toFixed(1)} MB)`;
+    a.href = url; a.download = 'leikstod.mp4'; a.hidden = false;
+    a.textContent = `Download leikstod.mp4 (${(target.buffer.byteLength / 1e6).toFixed(1)} MB)`;
     setStatus(`Export done: ${n} frames, ${outW}×${outH}`);
   } catch (e) {
     console.error(e);
