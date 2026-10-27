@@ -1229,8 +1229,11 @@ $('export').onclick = async () => {
     muxer.finalize();
     const url = URL.createObjectURL(new Blob([target.buffer], { type: 'video/mp4' }));
     const a = $('dl');
-    a.href = url; a.download = 'leikstod.mp4'; a.hidden = false;
-    a.textContent = `Download leikstod.mp4 (${(target.buffer.byteLength / 1e6).toFixed(1)} MB)`;
+    // e.g. "leikstod (beach walk).mp4", keeping the source name without its extension
+    const base = srcName.replace(/\.[^.]+$/, '');
+    const name = base ? `leikstod (${base}).mp4` : 'leikstod.mp4';
+    a.href = url; a.download = name; a.hidden = false;
+    a.textContent = `Download ${name} (${(target.buffer.byteLength / 1e6).toFixed(1)} MB)`;
     setStatus(`Export done: ${n} frames, ${outW}×${outH}`);
   } catch (e) {
     console.error(e);
